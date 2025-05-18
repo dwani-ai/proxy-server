@@ -10,7 +10,7 @@ COPY . .
 # Expose port from settings
 EXPOSE 7860
 
-RUN pip install httpx
+RUN pip install httpx slowapi
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD curl -f http://localhost:7860/v1/health || exit 1

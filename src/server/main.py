@@ -5,15 +5,15 @@ import os
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-# Custom key function to extract dwani_api_key from headers or query params
+# Custom key function to extract api_key from headers or query params
 def get_api_key(request: Request) -> str:
     # Check headers first
-    api_key = request.headers.get("X-Dwani-API-Key")
+    api_key = request.headers.get("X-API-Key")
     if not api_key:
         # Fallback to query parameters
-        api_key = request.query_params.get("dwani_api_key")
+        api_key = request.query_params.get("api_key")
     if not api_key:
-        raise HTTPException(status_code=400, detail="dwani_api_key is required")
+        raise HTTPException(status_code=400, detail="API key is required in 'X-API-Key' header or 'api_key' query parameter")
     return api_key
 
 # Initialize rate limiter with custom key function
@@ -22,7 +22,7 @@ limiter = Limiter(key_func=get_api_key)
 # FastAPI app setup
 app = FastAPI(
     title="Dhwani API Proxy",
-    description="A proxy that forwards all requests to a target server.",
+    description="A proxy that forwards all requests to the Dhwani API target server.",
     version="1.0.0",
     redirect_slashes=False,
 )
@@ -32,12 +32,11 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Target server to forward requests to
-TARGET_SERVER = os.getenv("DWANI_API_BASE_URL")  # Replace with the actual target server IP and port
-
+TARGET_SERVER = os.getenv("DWANI_API_BASE_URL", "http://localhost:8000")
 
 # Catch-all route to forward all requests with rate limiting
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
-@limiter.limit("1/minute")  # Limit to 1 request per minute per dwani_api_key
+@limiter.limit("5/minute")  # Limit to 100 requests per minute per api_key
 async def proxy(request: Request, path: str):
     # Construct the target URL
     target_url = f"{TARGET_SERVER}/{path}"

@@ -3,7 +3,7 @@ from fastapi.responses import Response
 import httpx
 import os
 from itertools import cycle
-from typing import List,Dict
+from typing import List, Dict
 import asyncio
 import logging
 from urllib.parse import urlparse
@@ -68,17 +68,17 @@ healthy_servers = cycle(BACKEND_SERVERS)
 HEALTH_CHECK_INTERVAL = 30
 
 async def health_check():
-    """Periodically check the health of backend servers."""
+    """Periodically check the health of backend servers, logging only failures."""
     async with httpx.AsyncClient(timeout=5) as client:
         while True:
             for server in BACKEND_SERVERS:
                 try:
                     response = await client.get(f"{server}/health")
                     server_health[server] = response.status_code == 200
-                    logger.info(f"Health check for {server}: {'Healthy' if server_health[server] else 'Unhealthy'}")
-                except httpx.RequestError:
+                    # Logging for successful health checks removed to reduce disk I/O
+                except httpx.RequestError as e:
                     server_health[server] = False
-                    logger.warning(f"Health check failed for {server}")
+                    logger.warning(f"Health check failed for {server}: {str(e)}")
             await asyncio.sleep(HEALTH_CHECK_INTERVAL)
 
 @app.on_event("startup")
@@ -123,7 +123,7 @@ async def load_balancer(request: Request, path: str):
                 content=body,
                 follow_redirects=False
             )
-            logger.info(f"Forwarded request to {target_server}, status: {response.status_code}")
+            # Logging for successful request forwarding removed to reduce disk I/O
             
             return Response(
                 content=response.content,

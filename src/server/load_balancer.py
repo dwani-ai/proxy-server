@@ -14,6 +14,9 @@ from slowapi.errors import RateLimitExceeded
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Suppress httpx INFO logs for successful requests, log only WARNING and above
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 # FastAPI app setup
 app = FastAPI(
     title="Dhwani API Load Balancer",
@@ -124,7 +127,6 @@ async def load_balancer(request: Request, path: str):
                 follow_redirects=False
             )
             # Logging for successful request forwarding removed to reduce disk I/O
-            
             return Response(
                 content=response.content,
                 status_code=response.status_code,

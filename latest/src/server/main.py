@@ -4,7 +4,6 @@ import httpx
 import os
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-import json  # Added for JSON validation (Step 8)
 
 # Custom key function to extract api_key from headers or query params
 def get_api_key(request: Request) -> str:
@@ -24,16 +23,17 @@ app = FastAPI(
     description="A proxy that forwards all requests to the Dhwani API target server.",
     version="1.0.0",
     redirect_slashes=False,
+    debug=False,  # Disable debug mode for production
 )
 
 # Step 2: Secure CORS Configuration
 from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://dwani.ai", "https://app.dwani.ai", "https://workshop.dwani.ai"],  # Explicit origins instead of wildcards
+    allow_origins=["https://dwani.ai", "https://app.dwani.ai",  "https://workshop.dwani.ai"],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],  # Restrict to commonly used methods
-    allow_headers=["X-API-Key", "Content-Type", "Accept"],  # Restrict to necessary headers
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["X-API-Key", "Content-Type", "Accept"],
 )
 
 # Add rate limit exceeded handler
@@ -43,34 +43,19 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Target server to forward requests to
 TARGET_SERVER = os.getenv("DWANI_API_BASE_URL", "http://localhost:8000")
 
-# Step 8: Catch-all route with JSON validation and restricted headers
+# Catch-all route with restricted headers (Step 8, JSON validation removed)
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 @limiter.limit("100/minute")
 async def proxy(request: Request, path: str):
-    # Construct the target URL
     target_url = f"{TARGET_SERVER}/{path}"
-    
-    # Prepare query parameters
     query_params = dict(request.query_params)
-    
-    # Step 8: Restrict headers to prevent spoofing
     headers = {
         key: value for key, value in request.headers.items()
-        if key.lower() not in ("host", "connection", "accept-encoding", "user-agent", "referer")  # Added user-agent, referer
+        if key.lower() not in ("host", "connection", "accept-encoding", "user-agent", "referer")
     }
-    
-    # Step 8: Get and validate request body
     body = await request.body()
-    if body:
-        try:
-            json.loads(body)  # Validate JSON body
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="Invalid JSON body")
-    
-    # Create an HTTPX client for making the request
     async with httpx.AsyncClient(timeout=6000) as client:
         try:
-            # Forward the request to the target server
             response = await client.request(
                 method=request.method,
                 url=target_url,
@@ -79,15 +64,12 @@ async def proxy(request: Request, path: str):
                 content=body,
                 follow_redirects=False
             )
-            
-            # Return the response directly
             return Response(
                 content=response.content,
                 status_code=response.status_code,
                 headers=dict(response.headers),
                 media_type=response.headers.get("content-type", "application/json")
             )
-            
         except httpx.TimeoutException:
             raise HTTPException(status_code=504, detail="Target server timeout")
         except httpx.HTTPStatusError as e:
@@ -97,4 +79,4 @@ async def proxy(request: Request, path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=80)
+    uvicorn.run(app, host="0.0.0.0", port=8000)  # Internal port for Nginx

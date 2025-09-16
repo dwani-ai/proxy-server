@@ -1,7 +1,7 @@
-# Use official Python runtime as base image
-# Use official Python runtime as base image
-FROM python:3.10-slim
+# Use official Python slim image as base
+FROM python:3.10-slim AS builder
 
+# Set working directory
 WORKDIR /app
 
 # Set environment variables
@@ -18,23 +18,40 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Create appuser and set permissions for /app and /data
-RUN useradd -ms /bin/bash appuser \
-    && mkdir -p /data \
-    && chown -R appuser:appuser /app /data
+# Final stage
+FROM python:3.10-slim
 
-USER appuser
+# Install Nginx and supervisor
+RUN apt-get update && apt-get install -y \
+    nginx \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
 
+# Copy Python dependencies from builder
+COPY --from=builder /usr/local /usr/local
+
+# Set working directory
 WORKDIR /app
 
+# Create appuser and set permissions
+RUN useradd -ms /bin/bash appuser \
+    && mkdir -p /data \
+    && chown -R appuser:appuser /app /data /var/log/nginx /var/lib/nginx
+
 # Copy application code
-COPY . .
+COPY src/ /app/src/
 
+# Copy Nginx configuration
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
 
-# Expose port from settings
+# Expose port 80 (Cloudflare handles HTTPS)
 EXPOSE 80
 
-RUN pip install httpx
+# Copy supervisor configuration
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Command to run the application
-CMD ["python", "/app/src/server/main.py", "--host", "0.0.0.0", "--port", "80"]
+# Run as non-root user
+USER appuser
+
+# Command to run supervisor (manages Nginx and Uvicorn)
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

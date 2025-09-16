@@ -10,9 +10,15 @@ from urllib.parse import urlparse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging to only capture WARNING and above
+logging.basicConfig(level=logging.WARNING)  # Suppress INFO logs
 logger = logging.getLogger(__name__)
+
+# Suppress httpx logs for successful requests, log only WARNING and above
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+# Suppress slowapi logs for INFO level, log only WARNING and above
+logging.getLogger("slowapi").setLevel(logging.WARNING)
 
 # FastAPI app setup
 app = FastAPI(
@@ -75,7 +81,7 @@ async def health_check():
                 try:
                     response = await client.get(f"{server}/health")
                     server_health[server] = response.status_code == 200
-                    # Logging for successful health checks removed to reduce disk I/O
+                    # Logging for successful health checks already removed
                 except httpx.RequestError as e:
                     server_health[server] = False
                     logger.warning(f"Health check failed for {server}: {str(e)}")
@@ -123,8 +129,7 @@ async def load_balancer(request: Request, path: str):
                 content=body,
                 follow_redirects=False
             )
-            # Logging for successful request forwarding removed to reduce disk I/O
-            
+            # Logging for successful request forwarding already removed
             return Response(
                 content=response.content,
                 status_code=response.status_code,
@@ -145,4 +150,10 @@ async def load_balancer(request: Request, path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=7860,
+        log_level="warning",  # Set Uvicorn log level to warning to suppress INFO logs
+        access_log=False  # Disable Uvicorn access logs for incoming requests
+    )

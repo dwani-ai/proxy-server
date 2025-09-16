@@ -7,10 +7,8 @@ from slowapi.errors import RateLimitExceeded
 
 # Custom key function to extract api_key from headers or query params
 def get_api_key(request: Request) -> str:
-    # Check headers first
     api_key = request.headers.get("X-API-Key")
     if not api_key:
-        # Fallback to query parameters
         api_key = request.query_params.get("api_key")
     if not api_key:
         raise HTTPException(status_code=400, detail="API key is required in 'X-API-Key' header or 'api_key' query parameter")
@@ -25,21 +23,19 @@ app = FastAPI(
     description="A proxy that forwards all requests to the Dhwani API target server.",
     version="1.0.0",
     redirect_slashes=False,
+    debug=False,  # Disable debug mode for production
 )
 
+# Step 2: Secure CORS Configuration
 from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[ "https://*.hf.space",
-        "https://dwani.ai",
-        "https://*.dwani.ai",
-        "https://dwani-*.hf.space",
-        "http://localhost:11080"
-        ],
+    allow_origins=["https://dwani.ai", "https://app.dwani.ai",  "https://workshop.dwani.ai"],
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["X-API-Key", "Content-Type", "Accept"],
 )
+
 # Add rate limit exceeded handler
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -47,29 +43,19 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Target server to forward requests to
 TARGET_SERVER = os.getenv("DWANI_API_BASE_URL", "http://localhost:8000")
 
-# Catch-all route to forward all requests with rate limiting
+# Catch-all route with restricted headers (Step 8, JSON validation removed)
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
-@limiter.limit("100/minute")  # Limit to 100 requests per minute per api_key
+@limiter.limit("100/minute")
 async def proxy(request: Request, path: str):
-    # Construct the target URL
     target_url = f"{TARGET_SERVER}/{path}"
-    
-    # Prepare query parameters
     query_params = dict(request.query_params)
-    
-    # Prepare headers, excluding FastAPI-specific headers
     headers = {
         key: value for key, value in request.headers.items()
-        if key.lower() not in ("host", "connection", "accept-encoding")
+        if key.lower() not in ("host", "connection", "accept-encoding", "user-agent", "referer")
     }
-    
-    # Get the request body, if any
     body = await request.body()
-    
-    # Create an HTTPX client for making the request
     async with httpx.AsyncClient(timeout=6000) as client:
         try:
-            # Forward the request to the target server
             response = await client.request(
                 method=request.method,
                 url=target_url,
@@ -78,15 +64,12 @@ async def proxy(request: Request, path: str):
                 content=body,
                 follow_redirects=False
             )
-            
-            # Return the response directly
             return Response(
                 content=response.content,
                 status_code=response.status_code,
                 headers=dict(response.headers),
                 media_type=response.headers.get("content-type", "application/json")
             )
-            
         except httpx.TimeoutException:
             raise HTTPException(status_code=504, detail="Target server timeout")
         except httpx.HTTPStatusError as e:
@@ -96,4 +79,4 @@ async def proxy(request: Request, path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=80)  # Run the proxy server
+    uvicorn.run(app, host="0.0.0.0", port=8000)  # Internal port for Nginx

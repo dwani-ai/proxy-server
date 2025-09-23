@@ -44,8 +44,8 @@ COPY src/ /app/src/
 # Copy Nginx configuration
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 
-# Expose port 80 (Cloudflare handles HTTPS)
-EXPOSE 80
+# Expose port 8080 internally (map to 80 on host via -p 80:8080)
+EXPOSE 8080
 
 # Copy supervisor configuration
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
